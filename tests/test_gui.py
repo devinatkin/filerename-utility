@@ -31,3 +31,35 @@ def test_select_files_adds_rows(tmp_path):
         assert set(app.tree.get_children()) == {str(f1), str(f2)}
 
     root.destroy()
+
+
+def test_unique_suggestion_skips_suffix_when_same_name(tmp_path):
+    file_path = tmp_path / "original.txt"
+    file_path.write_text("hello world")
+
+    with mock.patch('main.suggest_new_filename', return_value={'suggested_filename': 'original'}):
+        result = main.unique_suggestion(str(file_path), set())
+    assert result == 'original'
+
+
+def test_regenerate_and_rename(tmp_path):
+    try:
+        root = tk.Tk()
+        root.withdraw()
+    except tk.TclError:
+        pytest.skip("Tk not available")
+
+    f1 = tmp_path / "a.txt"
+    f1.write_text("hello")
+    app = main.FileRenamerUI(root)
+    app.files = [str(f1)]
+    app.file_data = {str(f1): 'name'}
+    app.rename_vars = {str(f1): tk.IntVar(value=1)}
+
+    with mock.patch('main.suggest_new_filename', return_value={'suggested_filename': 'newname'}):
+        app.regenerate_filename(str(f1))
+    assert app.file_data[str(f1)] == 'newname'
+
+    app.rename_files()
+    assert (tmp_path / 'newname.txt').exists()
+    root.destroy()

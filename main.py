@@ -24,14 +24,19 @@ def unique_suggestion(filepath, existing_names, method="slugify", attempts=3):
         result = suggest_new_filename(filepath, method=method)
         name = result.get("suggested_filename") or "file"
         candidate = os.path.join(dir_name, name + ext)
-        if name not in existing_names and not os.path.exists(candidate):
+        exists_elsewhere = os.path.exists(candidate) and os.path.abspath(candidate) != os.path.abspath(filepath)
+        if name not in existing_names and not exists_elsewhere:
             return name
         last_name = name
 
     base = last_name
     counter = 1
     new_name = base
-    while new_name in existing_names or os.path.exists(os.path.join(dir_name, new_name + ext)):
+    while True:
+        candidate = os.path.join(dir_name, new_name + ext)
+        exists_elsewhere = os.path.exists(candidate) and os.path.abspath(candidate) != os.path.abspath(filepath)
+        if new_name not in existing_names and not exists_elsewhere:
+            break
         new_name = f"{base}-{counter}"
         counter += 1
     return new_name
@@ -162,6 +167,8 @@ class FileRenamerUI:
                     continue
                 # Construct new path
                 new_path = os.path.join(dir_name, new_base + ext)
+                if os.path.abspath(new_path) == os.path.abspath(filepath):
+                    continue
                 try:
                     os.rename(filepath, new_path)
                 except Exception as e:
