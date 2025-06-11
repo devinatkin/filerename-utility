@@ -133,7 +133,7 @@ class FileRenamerUI:
         x, y, width, height = bbox
         var = self.rename_vars[filepath]
         cb = tk.Checkbutton(self.tree, variable=var)
-        self.tree.create_window(x + width//2, y + height//2, window=cb, anchor="center")
+        cb.place(x=x + width // 2, y=y + height // 2, anchor="center")
 
     def create_regen_button(self, filepath):
         """Place a regenerate button in the appropriate table cell."""
@@ -147,7 +147,7 @@ class FileRenamerUI:
             text="Regenerate",
             command=lambda p=filepath: self.regenerate_filename(p),
         )
-        self.tree.create_window(x + width // 2, y + height // 2, window=btn, anchor="center")
+        btn.place(x=x + width // 2, y=y + height // 2, anchor="center")
 
     def regenerate_filename(self, filepath):
         """Regenerate a unique filename suggestion for ``filepath``."""
