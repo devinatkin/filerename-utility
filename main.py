@@ -1,5 +1,6 @@
 import os
 import json
+import argparse
 import tkinter as tk
 from tkinter import filedialog, ttk, messagebox
 import threading
@@ -7,22 +8,10 @@ import threading
 # Import the function from the external file.
 from suggest_file_names import suggest_new_filename
 
-# Dummy implementations for functions used in suggest_new_filename
-# Remove these if they are included in suggest_file_names.py.
-def extract_pdf_text(filepath):
-    with open(filepath, "rb") as f:
-        return f"PDF content of {os.path.basename(filepath)}"
-
-def extract_json_from_response(response):
-    try:
-        result = json.loads(response)
-    except Exception:
-        result = {"suggested_filename": None}
-    return result
-
 class FileRenamerUI:
-    def __init__(self, master):
+    def __init__(self, master, method="slugify"):
         self.master = master
+        self.method = method
         master.title("AI File Renamer")
         master.geometry("700x500")
 
@@ -76,7 +65,7 @@ class FileRenamerUI:
         self.master.after(0, lambda: self.progress.config(maximum=total_files))
         for idx, filepath in enumerate(self.files, start=1):
             # Get suggested filename for each file by calling the imported function
-            suggestion = suggest_new_filename(filepath)
+            suggestion = suggest_new_filename(filepath, method=self.method)
             suggested_name = suggestion.get("suggested_filename", "")
             self.file_data[filepath] = suggested_name
 
@@ -134,6 +123,27 @@ class FileRenamerUI:
         self.rename_btn.config(state=tk.DISABLED)
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = FileRenamerUI(root)
-    root.mainloop()
+    parser = argparse.ArgumentParser(description="AI File Renamer")
+    parser.add_argument("files", nargs="*", help="Files to process in CLI mode")
+    parser.add_argument("-m", "--method", choices=["slugify", "gemma"], default="slugify",
+                        help="Suggestion method")
+    parser.add_argument("--cli", action="store_true", help="Run in CLI mode instead of GUI")
+    parser.add_argument("--rename", action="store_true", help="Rename files using suggestions (CLI mode)")
+    args = parser.parse_args()
+
+    if args.cli:
+        for path in args.files:
+            suggestion = suggest_new_filename(path, method=args.method)
+            new_name = suggestion["suggested_filename"]
+            print(json.dumps({"file": path, "suggested": new_name}, indent=2))
+            if args.rename:
+                ext = os.path.splitext(path)[1]
+                new_path = os.path.join(os.path.dirname(path), new_name + ext)
+                try:
+                    os.rename(path, new_path)
+                except Exception as exc:
+                    print(f"Failed to rename {path}: {exc}")
+    else:
+        root = tk.Tk()
+        app = FileRenamerUI(root, method=args.method)
+        root.mainloop()
