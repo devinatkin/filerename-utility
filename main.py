@@ -8,6 +8,34 @@ import threading
 # Import the function from the external file.
 from suggest_file_names import suggest_new_filename
 
+
+def unique_suggestion(filepath, existing_names, method="slugify", attempts=3):
+    """Generate a filename suggestion that is unique among ``existing_names``.
+
+    If a conflict is detected, try ``attempts`` times to regenerate.  After the
+    limit is reached, append ``-N`` to the final suggestion until it becomes
+    unique.
+    """
+    ext = os.path.splitext(filepath)[1]
+    dir_name = os.path.dirname(filepath)
+
+    last_name = "file"
+    for _ in range(attempts):
+        result = suggest_new_filename(filepath, method=method)
+        name = result.get("suggested_filename") or "file"
+        candidate = os.path.join(dir_name, name + ext)
+        if name not in existing_names and not os.path.exists(candidate):
+            return name
+        last_name = name
+
+    base = last_name
+    counter = 1
+    new_name = base
+    while new_name in existing_names or os.path.exists(os.path.join(dir_name, new_name + ext)):
+        new_name = f"{base}-{counter}"
+        counter += 1
+    return new_name
+
 class FileRenamerUI:
     def __init__(self, master, method="slugify"):
         self.master = master
@@ -35,14 +63,16 @@ class FileRenamerUI:
         self.table_frame.pack(fill=tk.BOTH, expand=True)
 
         # Create treeview for file list
-        columns = ("orig_name", "suggested_name", "rename")
+        columns = ("orig_name", "suggested_name", "rename", "regenerate")
         self.tree = ttk.Treeview(self.table_frame, columns=columns, show="headings")
         self.tree.heading("orig_name", text="Current Filename")
         self.tree.heading("suggested_name", text="Suggested Filename")
         self.tree.heading("rename", text="Rename")
+        self.tree.heading("regenerate", text="Regenerate")
         self.tree.column("orig_name", width=250)
         self.tree.column("suggested_name", width=250)
-        self.tree.column("rename", width=100)
+        self.tree.column("rename", width=80)
+        self.tree.column("regenerate", width=100)
         self.tree.pack(fill=tk.BOTH, expand=True)
 
         # Dict to hold IntVar for checkbuttons
@@ -64,18 +94,21 @@ class FileRenamerUI:
         total_files = len(self.files)
         self.master.after(0, lambda: self.progress.config(maximum=total_files))
         for idx, filepath in enumerate(self.files, start=1):
-            # Get suggested filename for each file by calling the imported function
-            suggestion = suggest_new_filename(filepath, method=self.method)
-            suggested_name = suggestion.get("suggested_filename", "")
+            # Get a unique suggested filename for each file
+            existing = set(self.file_data.values())
+            suggested_name = unique_suggestion(filepath, existing, method=self.method)
             self.file_data[filepath] = suggested_name
 
             def update_ui(idx=idx, filepath=filepath, suggested_name=suggested_name):
                 # Insert row in treeview
                 var = tk.IntVar(value=1)
                 self.rename_vars[filepath] = var
-                self.tree.insert("", "end", iid=filepath, values=(os.path.basename(filepath), suggested_name, ""), tags=("cb",))
-                # After insertion, add a checkbutton widget on top of the empty "rename" cell
+                self.tree.insert("", "end", iid=filepath,
+                                 values=(os.path.basename(filepath), suggested_name, "", ""),
+                                 tags=("cb",))
+                # After insertion, overlay widgets on cells
                 self.create_checkbox(filepath)
+                self.create_regen_button(filepath)
                 # Update progress bar
                 self.progress["value"] = idx
                 self.master.update_idletasks()
@@ -96,6 +129,27 @@ class FileRenamerUI:
         var = self.rename_vars[filepath]
         cb = tk.Checkbutton(self.tree, variable=var)
         self.tree.create_window(x + width//2, y + height//2, window=cb, anchor="center")
+
+    def create_regen_button(self, filepath):
+        """Place a regenerate button in the appropriate table cell."""
+        bbox = self.tree.bbox(filepath, column="regenerate")
+        if not bbox:
+            self.master.after(100, self.create_regen_button, filepath)
+            return
+        x, y, width, height = bbox
+        btn = tk.Button(
+            self.tree,
+            text="Regenerate",
+            command=lambda p=filepath: self.regenerate_filename(p),
+        )
+        self.tree.create_window(x + width // 2, y + height // 2, window=btn, anchor="center")
+
+    def regenerate_filename(self, filepath):
+        """Regenerate a unique filename suggestion for ``filepath``."""
+        existing = set(self.file_data.values()) - {self.file_data.get(filepath)}
+        new_name = unique_suggestion(filepath, existing, method=self.method)
+        self.file_data[filepath] = new_name
+        self.tree.set(filepath, "suggested_name", new_name)
     
     def rename_files(self):
         errors = []
@@ -132,9 +186,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.cli:
+        used_names = set()
         for path in args.files:
-            suggestion = suggest_new_filename(path, method=args.method)
-            new_name = suggestion["suggested_filename"]
+            new_name = unique_suggestion(path, used_names, method=args.method)
+            used_names.add(new_name)
             print(json.dumps({"file": path, "suggested": new_name}, indent=2))
             if args.rename:
                 ext = os.path.splitext(path)[1]
